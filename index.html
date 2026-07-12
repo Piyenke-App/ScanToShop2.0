@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+<title>ScanToShop 2.0</title>
+<meta name="description" content="ScanToShop 2.0 — scan barcodes and compare prices at nearby stores on the Pi Network." />
+<meta name="robots" content="index, follow" />
+<meta property="og:title" content="ScanToShop 2.0" />
+<meta property="og:description" content="Scan any barcode. See who sells it cheapest near you." />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="ScanToShop 2.0" />
+<meta name="twitter:description" content="Scan any barcode. See who sells it cheapest near you." />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://sdk.minepi.com/pi-sdk.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    --ink:#1C2B23;
+    --paper:#FBF8F2;
+    --paper-dim:#F2EEE3;
+    --herb:#1F6F4A;
+    --herb-dark:#134430;
+    --marigold:#F5A623;
+    --coral:#E15A3E;
+    --line: rgba(28,43,35,0.14);
+    --radius: 14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Public Sans', sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{
+    max-width:480px;
+    margin:0 auto;
+    min-height:100vh;
+    background:var(--paper);
+    display:flex;
+    flex-direction:column;
+    position:relative;
+  }
+
+  header{
+    padding:28px 22px 20px;
+    background:var(--herb);
+    color:var(--paper);
+    border-bottom-left-radius:28px;
+    border-bottom-right-radius:28px;
+    position:relative;
+    overflow:hidden;
+  }
+  header::after{
+    content:"";
+    position:absolute;
+    right:-40px; top:-40px;
+    width:160px;height:160px;
+    background:var(--herb-dark);
+    border-radius:50%;
+    opacity:0.5;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+    position:relative;
+    z-index:1;
+  }
+  .brand h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:28px;
+    margin:0;
+    letter-spacing:-0.01em;
+  }
+  .brand span.version{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    background:rgba(255,255,255,0.18);
+    padding:2px 7px;
+    border-radius:6px;
+  }
+  header p.tag{
+    margin:8px 0 0;
+    font-size:14.5px;
+    color:rgba(251,248,242,0.85);
+    max-width:30ch;
+    position:relative;
+    z-index:1;
+  }
+
+  main{
+    flex:1;
+    padding:22px 20px 90px;
+    display:flex;
+    flex-direction:column;
+    gap:18px;
+  }
+
+  .scan-card{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:20px;
+    text-align:center;
+  }
+  #reader{
+    width:100%;
+    border-radius:10px;
+    overflow:hidden;
+    background:#000;
+  }
+  #reader.hidden{display:none;}
+
+  .big-btn{
+    width:100%;
+    padding:16px;
+    border:none;
+    border-radius:12px;
+    background:var(--marigold);
+    color:var(--herb-dark);
+    font-family:'Public Sans', sans-serif;
+    font-weight:700;
+    font-size:16px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    transition:transform 0.15s ease;
+  }
+  .big-btn:active{ transform:scale(0.98); }
+  .big-btn.secondary{
+    background:var(--paper-dim);
+    color:var(--ink);
+    font-weight:600;
+  }
+  .big-btn:disabled{
+    opacity:0.55;
+    cursor:not-allowed;
+  }
+  .big-btn svg{ flex-shrink:0; }
+
+  .hint{
+    font-size:13px;
+    color:rgba(28,43,35,0.55);
+    margin:10px 0 0;
+  }
+
+  .manual-entry{
+    display:flex;
+    gap:8px;
+    margin-top:12px;
+  }
+  .manual-entry input{
+    flex:1;
+    padding:11px 12px;
+    border-radius:9px;
+    border:1px solid var(--line);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:14px;
+    background:var(--paper);
+  }
+  .manual-entry button{
+    padding:0 16px;
+    border-radius:9px;
+    border:none;
+    background:var(--herb);
+    color:#fff;
+    font-weight:600;
+    cursor:pointer;
+  }
+
+  .product-card{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:18px;
+    display:none;
+  }
+  .product-card.show{ display:block; animation:rise 0.35s ease; }
+  @keyframes rise{
+    from{ opacity:0; transform:translateY(10px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+  .product-head{
+    display:flex;
+    gap:14px;
+    align-items:center;
+  }
+  .product-head img{
+    width:56px; height:56px;
+    object-fit:contain;
+    border-radius:8px;
+    background:var(--paper-dim);
+  }
+  .product-head .ph-fallback{
+    width:56px; height:56px;
+    border-radius:8px;
+    background:var(--paper-dim);
+    display:flex;align-items:center;justify-content:center;
+    font-size:22px;
+  }
+  .product-name{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:18px;
+    line-height:1.25;
+    margin:0;
+  }
+  .product-barcode{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:rgba(28,43,35,0.5);
+    margin-top:3px;
+  }
+
+  .receipt{
+    margin-top:18px;
+    border-top:1px dashed var(--line);
+    padding-top:14px;
+  }
+  .receipt-title{
+    font-size:12.5px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:rgba(28,43,35,0.5);
+    font-weight:600;
+    margin-bottom:10px;
+  }
+  .price-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:10px 0;
+    border-bottom:1px dashed var(--line);
+  }
+  .price-row:last-child{ border-bottom:none; }
+  .vendor-info .vendor-name{
+    font-weight:600;
+    font-size:14.5px;
+  }
+  .vendor-info .vendor-dist{
+    font-size:12px;
+    color:rgba(28,43,35,0.5);
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .price-tag{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:600;
+    font-size:15px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .best-badge{
+    position:relative;
+    background:var(--marigold);
+    color:var(--herb-dark);
+    font-family:'Fraunces', serif;
+    font-weight:700;
+    font-size:11px;
+    padding:3px 9px 3px 8px;
+    border-radius:3px 8px 8px 3px;
+    transform:rotate(-2deg);
+    white-space:nowrap;
+  }
+  .best-badge::before{
+    content:"";
+    position:absolute;
+    left:-4px; top:50%;
+    transform:translateY(-50%);
+    width:6px;height:6px;
+    background:var(--paper);
+    border:1px solid var(--marigold);
+    border-radius:50%;
+  }
+
+  .empty-state{
+    text-align:center;
+    padding:20px 6px 6px;
+    color:rgba(28,43,35,0.65);
+    font-size:14px;
+    line-height:1.5;
+  }
+
+  .add-price{
+    margin-top:16px;
+    background:var(--paper-dim);
+    border-radius:10px;
+    padding:14px;
+  }
+  .add-price-title{
+    font-size:13.5px;
+    font-weight:600;
+    margin-bottom:10px;
+  }
+  .add-price-row{
+    display:flex;
+    gap:8px;
+  }
+  .add-price-row input{
+    padding:10px;
+    border-radius:8px;
+    border:1px solid var(--line);
+    font-family:'Public Sans', sans-serif;
+    font-size:13.5px;
+  }
+  .add-price-row input.vendor{ flex:1.4; }
+  .add-price-row input.price{ flex:1; font-family:'IBM Plex Mono', monospace; }
+  .add-price-row button{
+    padding:0 14px;
+    border-radius:8px;
+    border:none;
+    background:var(--herb);
+    color:#fff;
+    font-weight:600;
+    font-size:13px;
+    cursor:pointer;
+  }
+
+  footer{
+    text-align:center;
+    padding:14px 20px 20px;
+    font-size:11.5px;
+    color:rgba(28,43,35,0.4);
+    line-height:1.6;
+  }
+  footer a{
+    color:var(--herb);
+    text-decoration:none;
+    font-weight:500;
+  }
+  footer a:hover{ text-decoration:underline; }
+
+  .status-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-size:12px;
+    padding:5px 10px;
+    border-radius:20px;
+    background:var(--paper-dim);
+    color:rgba(28,43,35,0.7);
+    margin-bottom:14px;
+  }
+  .status-pill .dot{
+    width:7px;height:7px;border-radius:50%;
+    background:var(--herb);
+  }
+  .status-pill.error .dot{ background:var(--coral); }
+
+  .pi-banner{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:14px 16px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .pi-banner p{
+    margin:0;
+    font-size:13px;
+    color:rgba(28,43,35,0.75);
+  }
+  .pi-banner button{
+    border:none;
+    background:var(--herb);
+    color:#fff;
+    font-weight:600;
+    font-size:13px;
+    padding:8px 14px;
+    border-radius:8px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <h1>ScanToShop</h1>
+      <span class="version">2.0</span>
+    </div>
+    <p class="tag">Scan any barcode. See who sells it cheapest near you.</p>
+  </header>
+
+  <main>
+    <div id="piBanner" class="pi-banner" style="display:none;">
+      <p id="piBannerText">Sign in with Pi to contribute prices.</p>
+      <button id="piAuthBtn" type="button">Sign in</button>
+    </div>
+
+    <div id="locationPill" class="status-pill" style="display:none;">
+      <span class="dot"></span><span id="locationPillText">Using your location</span>
+    </div>
+
+    <div id="piStatusPill" class="status-pill" style="display:none;">
+      <span class="dot"></span><span id="piStatusText">Connected to Pi</span>
+    </div>
+
+    <div class="scan-card">
+      <div id="reader" class="hidden"></div>
+      <button id="scanBtn" class="big-btn" type="button">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 7V4a1 1 0 0 1 1-1h3M21 7V4a1 1 0 0 0-1-1h-3M3 17v3a1 1 0 0 0 1 1h3M21 17v3a1 1 0 0 1-1 1h-3M7 12h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        Scan a barcode
+      </button>
+      <button id="stopBtn" class="big-btn secondary" type="button" style="display:none; margin-top:10px;">Stop scanning</button>
+      <p class="hint">No camera handy? Type the barcode number instead.</p>
+      <div class="manual-entry">
+        <input id="manualBarcode" type="text" inputmode="numeric" placeholder="e.g. 0737628064502" />
+        <button id="manualBtn" type="button">Look up</button>
+      </div>
+    </div>
+
+    <div id="productCard" class="product-card">
+      <div class="product-head">
+        <img id="productImg" alt="" style="display:none;" />
+        <div id="productFallback" class="ph-fallback">🛒</div>
+        <div>
+          <p id="productName" class="product-name">Product name</p>
+          <p id="productBarcode" class="product-barcode"></p>
+        </div>
+      </div>
+
+      <div class="receipt">
+        <div class="receipt-title">Prices near you</div>
+        <div id="priceList"></div>
+        <div id="emptyState" class="empty-state" style="display:none;">
+          We don't have prices for this one yet.<br/>Be the first to add one below!
+        </div>
+      </div>
+
+      <div class="add-price">
+        <div class="add-price-title">Seen it somewhere? Add the price</div>
+        <div class="add-price-row">
+          <input class="vendor" id="newVendor" type="text" placeholder="Store name" />
+          <input class="price" id="newPrice" type="number" step="0.01" placeholder="$0.00" />
+          <button id="addPriceBtn" type="button">Add</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    ScanToShop 2.0 — built for the Pi Network<br/>
+    <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a>
+  </footer>
+</div>
+
+<script>
+const DEMO_VENDORS = [
+  { name: "GreenMart Downtown", lat: 40.7128, lng: -74.0060 },
+  { name: "Corner Grocer",      lat: 40.7168, lng: -74.0021 },
+  { name: "ValueFoods Express", lat: 40.7080, lng: -74.0110 },
+  { name: "FreshStop Market",   lat: 40.7211, lng: -73.9989 },
+];
+
+let priceDB = {
+  "3017620422003": [
+    { vendor: "GreenMart Downtown", price: 4.29 },
+    { vendor: "Corner Grocer",      price: 4.79 },
+    { vendor: "ValueFoods Express", price: 3.99 },
+  ],
+  "0737628064502": [
+    { vendor: "Corner Grocer",      price: 5.49 },
+    { vendor: "FreshStop Market",   price: 4.99 },
+  ],
+};
+
+let userLocation = null;
+let piUser = null;
+let piReady = false;
+
+const piBanner = document.getElementById('piBanner');
+const piAuthBtn = document.getElementById('piAuthBtn');
+const piStatusPill = document.getElementById('piStatusPill');
+const piStatusText = document.getElementById('piStatusText');
+const piBannerText = document.getElementById('piBannerText');
+
+function loadPricesFromStorage() {
+  try {
+    const saved = localStorage.getItem('scantoshop_prices');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      priceDB = { ...priceDB, ...parsed };
+    }
+  } catch (e) {
+    console.warn('Could not load saved prices', e);
+  }
+}
+
+function savePricesToStorage() {
+  try {
+    localStorage.setItem('scantoshop_prices', JSON.stringify(priceDB));
+  } catch (e) {
+    console.warn('Could not save prices', e);
+  }
+}
+
+function updatePiUI() {
+  if (piUser) {
+    piBanner.style.display = 'none';
+    piStatusPill.style.display = 'inline-flex';
+    piStatusPill.classList.remove('error');
+    piStatusText.textContent = `Signed in as @${piUser.username}`;
+    return;
+  }
+
+  piStatusPill.style.display = 'none';
+  if (piReady) {
+    piBanner.style.display = 'flex';
+    piBannerText.textContent = 'Sign in with Pi to contribute prices.';
+    piAuthBtn.textContent = 'Sign in';
+    piAuthBtn.disabled = false;
+  } else {
+    piBanner.style.display = 'flex';
+    piBannerText.textContent = 'Open in Pi Browser to sign in and contribute prices.';
+    piAuthBtn.textContent = 'Pi required';
+    piAuthBtn.disabled = true;
+  }
+}
+
+async function initPiSDK() {
+  if (!window.Pi) {
+    piReady = false;
+    updatePiUI();
+    return;
+  }
+
+  try {
+    // Set sandbox: false when publishing to Pi Mainnet.
+    await window.Pi.init({ version: '2.0', sandbox: true });
+    piReady = true;
+    updatePiUI();
+  } catch (e) {
+    console.error('Pi SDK init failed', e);
+    piReady = false;
+    piBanner.style.display = 'flex';
+    piBannerText.textContent = 'Pi SDK could not initialize. Open this app in Pi Browser.';
+    piAuthBtn.disabled = true;
+  }
+}
+
+async function authenticateWithPi() {
+  if (!piReady || !window.Pi) return;
+
+  piAuthBtn.disabled = true;
+  piAuthBtn.textContent = 'Signing in...';
+
+  try {
+    const auth = await window.Pi.authenticate(
+      ['username'],
+      function onIncompletePaymentFound(payment) {
+        console.log('Incomplete payment found:', payment.identifier);
+      }
+    );
+    piUser = auth.user;
+    updatePiUI();
+  } catch (e) {
+    console.error('Pi authentication failed', e);
+    piAuthBtn.disabled = false;
+    piAuthBtn.textContent = 'Sign in';
+    piBannerText.textContent = 'Sign-in was cancelled or failed. Try again.';
+  }
+}
+
+piAuthBtn.addEventListener('click', authenticateWithPi);
+
+navigator.geolocation && navigator.geolocation.getCurrentPosition(
+  pos => {
+    userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    document.getElementById('locationPill').style.display = 'inline-flex';
+  },
+  () => {},
+  { timeout: 5000 }
+);
+
+function haversineMiles(a, b){
+  const R = 3958.8;
+  const dLat = (b.lat - a.lat) * Math.PI/180;
+  const dLng = (b.lng - a.lng) * Math.PI/180;
+  const lat1 = a.lat * Math.PI/180, lat2 = b.lat * Math.PI/180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.asin(Math.sqrt(h));
+}
+
+let html5QrCode;
+const scanBtn = document.getElementById('scanBtn');
+const stopBtn = document.getElementById('stopBtn');
+const readerEl = document.getElementById('reader');
+
+scanBtn.addEventListener('click', async () => {
+  readerEl.classList.remove('hidden');
+  scanBtn.style.display = 'none';
+  stopBtn.style.display = 'block';
+  html5QrCode = new Html5Qrcode("reader");
+  try{
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 250, height: 150 } },
+      (decodedText) => {
+        handleBarcode(decodedText);
+        stopScanning();
+      },
+      () => {}
+    );
+  }catch(e){
+    alert("Couldn't access the camera. You can type the barcode number instead.");
+    stopScanning();
+  }
+});
+
+stopBtn.addEventListener('click', stopScanning);
+
+function stopScanning(){
+  if(html5QrCode){
+    html5QrCode.stop().catch(()=>{});
+  }
+  readerEl.classList.add('hidden');
+  scanBtn.style.display = 'flex';
+  stopBtn.style.display = 'none';
+}
+
+document.getElementById('manualBtn').addEventListener('click', () => {
+  const val = document.getElementById('manualBarcode').value.trim();
+  if(val) handleBarcode(val);
+});
+
+document.getElementById('manualBarcode').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const val = e.target.value.trim();
+    if (val) handleBarcode(val);
+  }
+});
+
+async function handleBarcode(barcode){
+  const card = document.getElementById('productCard');
+  card.classList.add('show');
+  document.getElementById('productName').textContent = "Looking this up...";
+  document.getElementById('productBarcode').textContent = barcode;
+  document.getElementById('productImg').style.display = 'none';
+  document.getElementById('productFallback').style.display = 'flex';
+
+  try{
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`);
+    const data = await res.json();
+    if(data.status === 1 && data.product){
+      const p = data.product;
+      document.getElementById('productName').textContent = p.product_name || "Unnamed product";
+      if(p.image_front_small_url){
+        const img = document.getElementById('productImg');
+        img.src = p.image_front_small_url;
+        img.alt = p.product_name || 'Product image';
+        img.style.display = 'block';
+        document.getElementById('productFallback').style.display = 'none';
+      }
+    } else {
+      document.getElementById('productName').textContent = "Product not found in our database";
+    }
+  }catch(e){
+    document.getElementById('productName').textContent = "Couldn't reach the product database";
+  }
+
+  renderPrices(barcode);
+  card.dataset.barcode = barcode;
+}
+
+function renderPrices(barcode){
+  const list = document.getElementById('priceList');
+  const empty = document.getElementById('emptyState');
+  list.innerHTML = "";
+  const entries = priceDB[barcode] || [];
+
+  if(entries.length === 0){
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const withDistance = entries.map(e => {
+    const vendor = DEMO_VENDORS.find(v => v.name === e.vendor);
+    const dist = (userLocation && vendor) ? haversineMiles(userLocation, vendor) : null;
+    return { ...e, dist };
+  }).sort((a,b) => a.price - b.price);
+
+  withDistance.forEach((e, i) => {
+    const row = document.createElement('div');
+    row.className = 'price-row';
+    row.innerHTML = `
+      <div class="vendor-info">
+        <div class="vendor-name">${escapeHtml(e.vendor)}</div>
+        <div class="vendor-dist">${e.dist !== null ? e.dist.toFixed(1) + ' mi away' : 'distance unknown'}</div>
+      </div>
+      <div class="price-tag">
+        ${i === 0 ? '<span class="best-badge">Best deal</span>' : ''}
+        $${e.price.toFixed(2)}
+      </div>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+document.getElementById('addPriceBtn').addEventListener('click', () => {
+  const card = document.getElementById('productCard');
+  const barcode = card.dataset.barcode;
+  if(!barcode) return;
+
+  if (!piUser) {
+    alert('Please sign in with Pi before adding a price.');
+    if (piReady) authenticateWithPi();
+    return;
+  }
+
+  const vendor = document.getElementById('newVendor').value.trim();
+  const price = parseFloat(document.getElementById('newPrice').value);
+  if(!vendor || isNaN(price) || price <= 0) {
+    alert('Enter a store name and a valid price.');
+    return;
+  }
+
+  if(!priceDB[barcode]) priceDB[barcode] = [];
+  priceDB[barcode].push({ vendor, price, addedBy: piUser.username });
+  document.getElementById('newVendor').value = '';
+  document.getElementById('newPrice').value = '';
+  savePricesToStorage();
+  renderPrices(barcode);
+});
+
+loadPricesFromStorage();
+initPiSDK();
+</script>
+</body>
+</html>
