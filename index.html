@@ -545,7 +545,7 @@ async function initPiSDK() {
 
   try {
     // Set sandbox: false when publishing to Pi Mainnet.
-    await window.Pi.init({ version: '2.0', sandbox: true });
+    await window.Pi.init({ version: '2.0', sandbox: false });
     piReady = true;
     updatePiUI();
   } catch (e) {
